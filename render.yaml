@@ -1,0 +1,6 @@
+services:
+  - type: web
+    name: node-server
+    env: node
+    buildCommand: ./render-build.sh && npm install
+    startCommand: npm start
