@@ -83,7 +83,62 @@ app.get('/:stockCode', async (req, res) => {
     res.status(500).json({ error: 'Error fetching data', details: error.message });
   }
 });
+app.get('/:stockCode/update', async (req, res) => {
+  try {
+    const baseStockCode = req.params.stockCode; // Get stock name from URL
+    const stockCode = `${baseStockCode}.NS`; // Append 'NS' for the Indian market
 
+    // Fetch today's stock quote
+    const stockData = await yahooFinance.quote(stockCode);
+    if (!stockData || !stockData.regularMarketPrice) {
+      throw new Error('Stock data not found');
+    }
+
+    // Get current timestamp and calculate yesterday's timestamp
+    const now = Math.floor(Date.now() / 1000);
+    const yesterday = now - 24 * 60 * 60;
+
+    // Fetch historical data (only yesterday to today)
+    const historicalData = await yahooFinance.historical(stockCode, {
+      period1: yesterday,
+      period2: now,
+      interval: '1d',
+    });
+
+    if (!historicalData || historicalData.length === 0) {
+      throw new Error('No recent historical data available');
+    }
+
+    // Extract the latest closing price
+    const latestData = historicalData[historicalData.length - 1];
+    const date = new Date(latestData.date);
+    const close = latestData.close;
+    const previousClose = historicalData.length > 1 ? historicalData[historicalData.length - 2].close : close;
+    const change = close - previousClose;
+    const gain = change > 0 ? change : 0;
+    const loss = change < 0 ? Math.abs(change) : 0;
+
+    const rowData = [
+      [formatDate(date.toISOString()), close, change.toFixed(2), gain.toFixed(2), loss.toFixed(2)],
+    ];
+
+    // Ensure sheet exists
+    await createSheetIfNotExists(baseStockCode);
+
+    // Append today's data
+    await appendToSheet(baseStockCode, rowData);
+
+    res.json({
+      message: `Today's data for ${baseStockCode} added successfully`,
+      stockCode: baseStockCode,
+      date: formatDate(date.toISOString()),
+      price: close,
+    });
+  } catch (error) {
+    console.error('Error updating data:', error.message);
+    res.status(500).json({ error: 'Error updating data', details: error.message });
+  }
+});
 app.listen(port, () => {
   console.log(`Server is running on http://localhost:${port}`);
 });
